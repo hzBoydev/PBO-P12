@@ -1,103 +1,172 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import logging
 
-# Model Sederhana
+# Setup logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
 @dataclass
 class Order:
+    """Data class yang merepresentasikan pesanan pelanggan.
+    
+    Attributes:
+        customer_name: Nama pelanggan yang melakukan pesanan
+        total_price: Total harga dari pesanan
+        status: Status pesanan, default adalah 'open'
+    """
     customer_name: str
     total_price: float
     status: str = "open"
 
-# === KODE BURUK (SEBELUM REFACTOR) ===
-class OrderManager:  # Melanggar SRP, OCP, DIP
-    def process_checkout(self, order: Order, payment_method: str):
-        print(f"Memulai checkout untuk {order.customer_name}...")
 
-        # LOGIKA PEMBAYARAN (pelanggaran OCP/DIP)
-        if payment_method == "credit_card":
-            # Logika detail implementasi hardcoded di sini
-            print("Processing Credit Card...")
-        elif payment_method == "bank_transfer":
-            # Logika detail implementasi hardcoded di sini
-            print("Processing Bank Transfer...")
-        else:
-            print("Metode tidak valid.")
-            return False
-
-        # LOGIKA NOTIFIKASI (pelanggaran SRP)
-        print(f"Mengirim notifikasi ke {order.customer_name}...")
-        order.status = "paid"
-        return True
-
-
-# -- ABSTRAKSI (Kontrak untuk OCP/DIP) --
 class IPaymentProcessor(ABC):
-    """Kontrak: Semua processor pembayaran harus punya method 'process'."""
-
+    """Interface untuk processor pembayaran berdasarkan prinsip DIP.
+    
+    Interface ini mendefinisikan kontrak yang harus diimplementasikan
+    oleh semua jenis processor pembayaran.
+    
+    Methods:
+        process: Memproses pembayaran untuk pesanan tertentu
+    """
+    
     @abstractmethod
     def process(self, order: Order) -> bool:
+        """Memproses pembayaran untuk pesanan.
+        
+        Args:
+            order: Objek Order yang akan diproses pembayarannya
+            
+        Returns:
+            True jika pembayaran berhasil, False jika gagal
+            
+        Raises:
+            Exception: Jika terjadi kesalahan dalam proses pembayaran
+        """
         pass
 
 
 class INotificationService(ABC):
-    """Kontrak: Semua layanan notifikasi harus punya method 'send'."""
-
+    """Interface untuk layanan notifikasi berdasarkan prinsip DIP.
+    
+    Interface ini mendefinisikan kontrak yang harus diimplementasikan
+    oleh semua jenis layanan notifikasi.
+    
+    Methods:
+        send: Mengirim notifikasi kepada pelanggan
+    """
+    
     @abstractmethod
-    def send(self, order: Order):
+    def send(self, order: Order) -> None:
+        """Mengirim notifikasi kepada pelanggan.
+        
+        Args:
+            order: Objek Order yang menjadi konteks notifikasi
+        """
         pass
 
 
-# -- IMPLEMENTASI KONKRIT (Plug-in) --
 class CreditCardProcessor(IPaymentProcessor):
+    """Implementasi processor pembayaran menggunakan kartu kredit.
+    
+    Kelas ini menangani logika spesifik untuk pembayaran kartu kredit.
+    """
+    
     def process(self, order: Order) -> bool:
-        print("Payment: Memproses Kartu Kredit.")
+        """Memproses pembayaran dengan kartu kredit.
+        
+        Args:
+            order: Objek Order yang akan diproses
+            
+        Returns:
+            True jika pembayaran kartu kredit berhasil
+        """
+        logging.info(f"Memproses pembayaran kartu kredit untuk {order.customer_name}")
+        # Logika spesifik kartu kredit di sini
         return True
 
 
 class EmailNotifier(INotificationService):
-    def send(self, order: Order):
-        print(f"Notif: Mengirim email konfirmasi ke {order.customer_name}.")
+    """Implementasi layanan notifikasi melalui email.
+    
+    Kelas ini menangani pengiriman notifikasi melalui email.
+    """
+    
+    def send(self, order: Order) -> None:
+        """Mengirim notifikasi email konfirmasi.
+        
+        Args:
+            order: Objek Order yang akan dikirim notifikasinya
+        """
+        logging.info(f"Mengirim email konfirmasi ke {order.customer_name}")
+        # Logika pengiriman email di sini
 
 
-# -- KELAS KOORDINATOR (SRP & DIP) --
-class CheckoutService:  # Tanggung jawab tunggal: Mengkoordinasi Checkout
-    def __init__(self, payment_processor: IPaymentProcessor, notifier: INotificationService):
-        # Dependency Injection (DIP): Bergantung pada Abstraksi, bukan Konkrit
+class CheckoutService:
+    """Service untuk mengkoordinasi proses checkout berdasarkan prinsip SRP.
+    
+    Kelas ini bertanggung jawab tunggal untuk mengkoordinasi proses checkout,
+    termasuk pembayaran dan notifikasi.
+    
+    Attributes:
+        payment_processor: Processor pembayaran yang diinject
+        notifier: Layanan notifikasi yang diinject
+    """
+    
+    def __init__(self, payment_processor: IPaymentProcessor, 
+                 notifier: INotificationService):
+        """Menginisialisasi CheckoutService dengan dependency injection.
+        
+        Args:
+            payment_processor: Implementasi IPaymentProcessor untuk pembayaran
+            notifier: Implementasi INotificationService untuk notifikasi
+        """
         self.payment_processor = payment_processor
         self.notifier = notifier
-
-    def run_checkout(self, order: Order):
-        payment_success = self.payment_processor.process(order)  # Delegasi 1
-
+    
+    def run_checkout(self, order: Order) -> bool:
+        """Menjalankan proses checkout lengkap.
+        
+        Metode ini mengkoordinasi proses pembayaran dan pengiriman notifikasi.
+        
+        Args:
+            order: Objek Order yang akan diproses checkout
+            
+        Returns:
+            True jika checkout berhasil, False jika gagal
+        """
+        logging.info(f"Memulai proses checkout untuk {order.customer_name}")
+        
+        # Proses pembayaran
+        payment_success = self.payment_processor.process(order)
+        
         if payment_success:
             order.status = "paid"
-            self.notifier.send(order)  # Delegasi 2
-            print("Checkout Sukses.")
+            self.notifier.send(order)
+            logging.info(f"Checkout berhasil untuk {order.customer_name}")
             return True
-        return False
+        else:
+            logging.warning(f"Checkout gagal untuk {order.customer_name}")
+            return False
 
 
-# --- PROGRAM UTAMA ---
-# Setup Dependencies
-andi_order = Order("Andi", 500000)
-email_service = EmailNotifier()
-
-# 1. Inject implementasi Credit Card
-cc_processor = CreditCardProcessor()
-checkout_cc = CheckoutService(payment_processor=cc_processor, notifier=email_service)
-print("--- Skenario 1: Credit Card ---")
-checkout_cc.run_checkout(andi_order)
-
-# 2. Pembuktian OCP: Menambah Metode Pembayaran QRIS (Tanpa Mengubah CheckoutService)
 class QrisProcessor(IPaymentProcessor):
+    """Implementasi processor pembayaran menggunakan QRIS.
+    
+    Kelas ini menangani logika spesifik untuk pembayaran QRIS.
+    """
+    
     def process(self, order: Order) -> bool:
-        print("Payment: Memproses QRIS.")
+        """Memproses pembayaran dengan QRIS.
+        
+        Args:
+            order: Objek Order yang akan diproses
+            
+        Returns:
+            True jika pembayaran QRIS berhasil
+        """
+        logging.info(f"Memproses pembayaran QRIS untuk {order.customer_name}")
+        # Logika spesifik QRIS di sini
         return True
-
-budi_order = Order("Budi", 100000)
-qris_processor = QrisProcessor()
-
-# Inject implementasi QRIS yang baru dibuat
-checkout_qris = CheckoutService(payment_processor=qris_processor, notifier=email_service)
-print("\n--- Skenario 2: Pembuktian OCP (QRIS) ---")
-checkout_qris.run_checkout(budi_order)
